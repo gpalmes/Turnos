@@ -5,3 +5,16 @@ __pycache__/
 *.pyc
 .DS_Store
 Thumbs.db
+
+# Variables de entorno (credenciales - nunca subir)
+.env
+.env.local
+.env.*.local
+
+# Build output
+.next/
+.expo/
+
+# Bases de datos locales
+*.db
+*.db-journal

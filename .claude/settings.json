@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(cd *)",
+      "PowerShell(Write-Output *)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Select-String *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Start-Sleep *)",
+      "PowerShell(npm run build)",
+      "PowerShell(npm run dev)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(Get-CimInstance *)",
+      "PowerShell(git status *)",
+      "PowerShell(git log *)",
+      "PowerShell(git diff *)",
+      "PowerShell(git show *)",
+      "PowerShell(git branch *)"
+    ]
+  }
+}
