@@ -8,8 +8,6 @@ import Button from '@/components/ui/Button';
 interface Business {
   id: string;
   name: string;
-  category: string;
-  email?: string;
 }
 
 interface Service {
@@ -31,7 +29,7 @@ interface Slot {
   available: boolean;
 }
 
-const STEP_LABELS = ['Negocio', 'Servicio', 'Recurso', 'Fecha y hora'];
+const STEP_LABELS = ['Servicio', 'Recurso', 'Fecha y hora'];
 
 function todayStr() {
   const d = new Date();
@@ -51,10 +49,8 @@ function BackLink({ onClick }: { onClick: () => void }) {
   );
 }
 
-export default function BookingFlow() {
+export default function BookingFlow({ business }: { business: Business }) {
   const [step, setStep] = useState(1);
-  const [businesses, setBusinesses] = useState<Business[]>([]);
-  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [resources, setResources] = useState<Resource[]>([]);
@@ -72,24 +68,23 @@ export default function BookingFlow() {
   const [confirmed, setConfirmed] = useState<{ id: string } | null>(null);
 
   useEffect(() => {
-    const fetchBusinesses = async () => {
+    const fetchServices = async () => {
       try {
-        const res = await fetch('/api/businesses');
+        const res = await fetch(`/api/services?businessId=${business.id}`);
         const data = await res.json();
-        setBusinesses(data);
+        setServices(Array.isArray(data) ? data : []);
       } catch (error) {
-        console.error('Error fetching businesses:', error);
+        console.error('Error fetching services:', error);
       } finally {
         setLoading(false);
       }
     };
+    fetchServices();
+  }, [business.id]);
 
-    fetchBusinesses();
-  }, []);
-
-  // Cada vez que estamos en el paso 4 con recurso + fecha, traemos los horarios disponibles.
+  // Trae los horarios disponibles cuando estamos en el paso de fecha/hora.
   useEffect(() => {
-    if (step !== 4 || !selectedBusiness || !selectedResource || !selectedService || !bookingDate) {
+    if (step !== 3 || !selectedResource || !selectedService || !bookingDate) {
       return;
     }
 
@@ -101,7 +96,7 @@ export default function BookingFlow() {
     const fetchSlots = async () => {
       try {
         const params = new URLSearchParams({
-          businessId: selectedBusiness.id,
+          businessId: business.id,
           resourceId: selectedResource.id,
           date: bookingDate,
           durationMinutes: String(selectedService.duration),
@@ -121,54 +116,38 @@ export default function BookingFlow() {
     return () => {
       cancelled = true;
     };
-  }, [step, selectedBusiness, selectedResource, selectedService, bookingDate]);
-
-  const handleBusinessSelect = async (business: Business) => {
-    setSelectedBusiness(business);
-    setStep(2);
-
-    try {
-      const servicesRes = await fetch(`/api/services?businessId=${business.id}`);
-      const servicesData = await servicesRes.json();
-      setServices(servicesData);
-    } catch (error) {
-      console.error('Error fetching business details:', error);
-    }
-  };
+  }, [step, business.id, selectedResource, selectedService, bookingDate]);
 
   const handleServiceSelect = async (service: Service) => {
     setSelectedService(service);
 
-    if (!selectedBusiness) return;
-
     try {
       const resourcesRes = await fetch(
-        `/api/resources?businessId=${selectedBusiness.id}&serviceId=${service.id}`
+        `/api/resources?businessId=${business.id}&serviceId=${service.id}`
       );
       const resourcesData: Resource[] = await resourcesRes.json();
       setResources(resourcesData);
 
-      // Si hay un solo recurso, no tiene sentido pedir que lo elija: lo saltamos.
+      // Si hay un solo recurso, lo saltamos.
       if (resourcesData.length === 1) {
         setSelectedResource(resourcesData[0]);
-        setStep(4);
-      } else {
         setStep(3);
+      } else {
+        setStep(2);
       }
     } catch (error) {
       console.error('Error fetching resources:', error);
-      setStep(3);
+      setStep(2);
     }
   };
 
   const handleResourceSelect = (resource: Resource) => {
     setSelectedResource(resource);
-    setStep(4);
+    setStep(3);
   };
 
   const resetFlow = () => {
     setStep(1);
-    setSelectedBusiness(null);
     setSelectedService(null);
     setSelectedResource(null);
     setBookingDate(todayStr());
@@ -180,7 +159,7 @@ export default function BookingFlow() {
   };
 
   const handleConfirmBooking = async () => {
-    if (!selectedBusiness || !selectedService || !selectedResource || !selectedSlot) {
+    if (!selectedService || !selectedResource || !selectedSlot) {
       setError('Elegí un horario para continuar');
       return;
     }
@@ -193,7 +172,7 @@ export default function BookingFlow() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          businessId: selectedBusiness.id,
+          businessId: business.id,
           serviceId: selectedService.id,
           resourceId: selectedResource.id,
           startTime: selectedSlot.startTime,
@@ -221,7 +200,7 @@ export default function BookingFlow() {
   };
 
   if (loading) {
-    return <p className="text-sm text-gray-500">Cargando negocios...</p>;
+    return <p className="text-sm text-gray-500">Cargando servicios...</p>;
   }
 
   // Pantalla de confirmación final.
@@ -232,7 +211,7 @@ export default function BookingFlow() {
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 text-green-700">✓</span>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">¡Turno reservado!</h2>
-            <p className="text-sm text-gray-500">Te esperamos en {selectedBusiness?.name}.</p>
+            <p className="text-sm text-gray-500">Te esperamos en {business.name}.</p>
           </div>
         </div>
         <div className="space-y-1 text-sm text-gray-700">
@@ -253,39 +232,14 @@ export default function BookingFlow() {
   return (
     <div>
       <p className="mb-6 text-sm font-medium text-brand-600">
-        Paso {step} de 4 · {STEP_LABELS[step - 1]}
+        Paso {step} de 3 · {STEP_LABELS[step - 1]}
       </p>
 
       {step === 1 && (
         <div>
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">Selecciona un negocio</h2>
-          {businesses.length === 0 ? (
-            <p className="text-sm text-gray-500">No hay negocios disponibles aún.</p>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {businesses.map((business) => (
-                <Card
-                  key={business.id}
-                  interactive
-                  onClick={() => handleBusinessSelect(business)}
-                >
-                  <h3 className="font-medium text-gray-900">{business.name}</h3>
-                  <p className="mt-1 text-sm text-gray-500">{business.category}</p>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {step === 2 && selectedBusiness && (
-        <div>
-          <BackLink onClick={() => setStep(1)} />
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">
-            Servicios en {selectedBusiness.name}
-          </h2>
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">Elegí un servicio</h2>
           {services.length === 0 ? (
-            <p className="text-sm text-gray-500">No hay servicios disponibles.</p>
+            <p className="text-sm text-gray-500">Este negocio todavía no cargó servicios.</p>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {services.map((service) => (
@@ -300,10 +254,10 @@ export default function BookingFlow() {
         </div>
       )}
 
-      {step === 3 && selectedService && (
+      {step === 2 && selectedService && (
         <div>
-          <BackLink onClick={() => setStep(2)} />
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">Selecciona un recurso</h2>
+          <BackLink onClick={() => setStep(1)} />
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">Elegí un recurso</h2>
           {resources.length === 0 ? (
             <p className="text-sm text-gray-500">No hay recursos disponibles.</p>
           ) : (
@@ -319,11 +273,11 @@ export default function BookingFlow() {
         </div>
       )}
 
-      {step === 4 && selectedService && (
+      {step === 3 && selectedService && (
         <div>
           {/* Si el recurso fue auto-seleccionado (uno solo), "Atrás" vuelve a Servicios. */}
-          <BackLink onClick={() => setStep(resources.length === 1 ? 2 : 3)} />
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">Selecciona fecha y hora</h2>
+          <BackLink onClick={() => setStep(resources.length === 1 ? 1 : 2)} />
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">Elegí fecha y hora</h2>
 
           <label className="mb-2 block text-sm font-medium text-gray-700">Fecha</label>
           <input
@@ -368,7 +322,7 @@ export default function BookingFlow() {
 
           {selectedSlot && (
             <Card className="mb-4 space-y-1 text-sm text-gray-700">
-              <p><span className="font-medium text-gray-900">Negocio:</span> {selectedBusiness?.name}</p>
+              <p><span className="font-medium text-gray-900">Negocio:</span> {business.name}</p>
               <p><span className="font-medium text-gray-900">Servicio:</span> {selectedService.name} ({selectedService.duration} min)</p>
               <p><span className="font-medium text-gray-900">Recurso:</span> {selectedResource?.name}</p>
               <p><span className="font-medium text-gray-900">Cuándo:</span> {new Date(selectedSlot.startTime).toLocaleString('es-AR')}</p>

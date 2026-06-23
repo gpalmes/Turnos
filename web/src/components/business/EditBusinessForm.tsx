@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
+import RubroField from '@/components/business/RubroField';
 
 interface Business {
   id: string;
@@ -67,7 +68,7 @@ export default function EditBusinessForm({ business }: { business: Business }) {
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {success && <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">Guardado</p>}
       <Input label="Nombre" type="text" name="name" defaultValue={business.name} required />
-      <Input label="Rubro" type="text" name="category" defaultValue={business.category} required />
+      <RubroField defaultValue={business.category} />
       <Input label="Zona horaria" type="text" name="timezone" defaultValue={business.timezone} />
       <Input label="Dirección" type="text" name="address" defaultValue={business.address ?? ''} />
       <Input label="Teléfono" type="text" name="phone" defaultValue={business.phone ?? ''} />

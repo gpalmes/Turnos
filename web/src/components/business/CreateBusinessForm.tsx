@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
+import RubroField from '@/components/business/RubroField';
 
 export default function CreateBusinessForm() {
   const router = useRouter();
@@ -51,7 +52,7 @@ export default function CreateBusinessForm() {
       <h3 className="text-base font-semibold text-gray-900">Crear negocio</h3>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       <Input label="Nombre" type="text" name="name" required />
-      <Input label="Rubro" type="text" name="category" required placeholder="padel, medical, barbershop..." />
+      <RubroField />
       <Input label="Zona horaria" type="text" name="timezone" defaultValue="UTC" />
       <Input label="Dirección" type="text" name="address" />
       <Input label="Teléfono" type="text" name="phone" />
