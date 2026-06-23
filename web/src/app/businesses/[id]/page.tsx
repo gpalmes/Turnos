@@ -12,8 +12,10 @@ import ResourceRow from '@/components/business/ResourceRow';
 import ScheduleRow from '@/components/business/ScheduleRow';
 import AvailabilityExceptionRow from '@/components/business/AvailabilityExceptionRow';
 import DeleteBusinessForm from '@/components/business/DeleteBusinessForm';
+import OwnerBookingRow from '@/components/business/OwnerBookingRow';
 import Container from '@/components/ui/Container';
 import Card from '@/components/ui/Card';
+import Tabs from '@/components/ui/Tabs';
 
 export default async function BusinessDetailPage({ params }: { params: { id: string } }) {
   const user = await getSessionUser();
@@ -36,6 +38,17 @@ export default async function BusinessDetailPage({ params }: { params: { id: str
     notFound();
   }
 
+  // Reservas recibidas en este negocio (las que hicieron los clientes).
+  const bookings = await prisma.booking.findMany({
+    where: { businessId: business.id },
+    orderBy: { startTime: 'desc' },
+    include: {
+      user: { select: { name: true, email: true } },
+      service: { select: { name: true } },
+      resource: { select: { name: true } },
+    },
+  });
+
   return (
     <Container>
       <Link href="/businesses" className="mb-4 inline-block text-sm text-gray-500 hover:text-brand-600">
@@ -49,77 +62,128 @@ export default async function BusinessDetailPage({ params }: { params: { id: str
         </p>
       )}
 
-      <div className="mt-6 flex flex-col gap-6">
-        <Card>
-          <EditBusinessForm business={business} />
-        </Card>
+      <div className="mt-6">
+        <Tabs
+          tabs={[
+            {
+              label: `Reservas${bookings.length ? ` (${bookings.length})` : ''}`,
+              content: (
+                <Card>
+                  <h2 className="text-base font-semibold text-gray-900">Reservas recibidas</h2>
+                  {bookings.length === 0 ? (
+                    <p className="mt-2 text-sm text-gray-500">Todavía no recibiste reservas.</p>
+                  ) : (
+                    <ul className="mt-3 divide-y divide-gray-100">
+                      {bookings.map((b) => (
+                        <OwnerBookingRow
+                          key={b.id}
+                          booking={{
+                            id: b.id,
+                            startTime: b.startTime.toISOString(),
+                            status: b.status,
+                            clientName: b.user.name,
+                            clientEmail: b.user.email,
+                            serviceName: b.service.name,
+                            resourceName: b.resource.name,
+                          }}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </Card>
+              ),
+            },
+            {
+              label: 'Servicios y recursos',
+              content: (
+                <div className="flex flex-col gap-6">
+                  <Card>
+                    <h2 className="text-base font-semibold text-gray-900">Servicios</h2>
+                    {business.services.length === 0 ? (
+                      <p className="mt-2 text-sm text-gray-500">Todavía no hay servicios.</p>
+                    ) : (
+                      <ul className="mt-3 divide-y divide-gray-100">
+                        {business.services.map((s) => (
+                          <ServiceRow
+                            key={s.id}
+                            service={s}
+                            allResources={business.resources.map((r) => ({ id: r.id, name: r.name }))}
+                          />
+                        ))}
+                      </ul>
+                    )}
+                    <CreateServiceForm businessId={business.id} />
+                  </Card>
 
-        <Card>
-          <h2 className="text-base font-semibold text-gray-900">Servicios</h2>
-          {business.services.length === 0 ? (
-            <p className="mt-2 text-sm text-gray-500">Todavía no hay servicios.</p>
-          ) : (
-            <ul className="mt-3 divide-y divide-gray-100">
-              {business.services.map((s) => (
-                <ServiceRow
-                  key={s.id}
-                  service={s}
-                  allResources={business.resources.map((r) => ({ id: r.id, name: r.name }))}
-                />
-              ))}
-            </ul>
-          )}
-          <CreateServiceForm businessId={business.id} />
-        </Card>
+                  <Card>
+                    <h2 className="text-base font-semibold text-gray-900">Recursos</h2>
+                    {business.resources.length === 0 ? (
+                      <p className="mt-2 text-sm text-gray-500">Todavía no hay recursos.</p>
+                    ) : (
+                      <ul className="mt-3 divide-y divide-gray-100">
+                        {business.resources.map((r) => (
+                          <ResourceRow key={r.id} resource={r} />
+                        ))}
+                      </ul>
+                    )}
+                    <CreateResourceForm businessId={business.id} />
+                  </Card>
+                </div>
+              ),
+            },
+            {
+              label: 'Horarios',
+              content: (
+                <div className="flex flex-col gap-6">
+                  <Card>
+                    <h2 className="text-base font-semibold text-gray-900">Horario semanal</h2>
+                    {business.schedules.length === 0 ? (
+                      <p className="mt-2 text-sm text-gray-500">Todavía no configuraste el horario.</p>
+                    ) : (
+                      <ul className="mt-3 divide-y divide-gray-100">
+                        {business.schedules.map((s) => (
+                          <ScheduleRow key={s.id} schedule={s} />
+                        ))}
+                      </ul>
+                    )}
+                    <CreateScheduleForm businessId={business.id} />
+                  </Card>
 
-        <Card>
-          <h2 className="text-base font-semibold text-gray-900">Recursos</h2>
-          {business.resources.length === 0 ? (
-            <p className="mt-2 text-sm text-gray-500">Todavía no hay recursos.</p>
-          ) : (
-            <ul className="mt-3 divide-y divide-gray-100">
-              {business.resources.map((r) => (
-                <ResourceRow key={r.id} resource={r} />
-              ))}
-            </ul>
-          )}
-          <CreateResourceForm businessId={business.id} />
-        </Card>
+                  <Card>
+                    <h2 className="text-base font-semibold text-gray-900">Excepciones de disponibilidad</h2>
+                    {business.availability.length === 0 ? (
+                      <p className="mt-2 text-sm text-gray-500">No hay excepciones configuradas.</p>
+                    ) : (
+                      <ul className="mt-3 divide-y divide-gray-100">
+                        {business.availability.map((a) => (
+                          <AvailabilityExceptionRow key={a.id} exception={a} />
+                        ))}
+                      </ul>
+                    )}
+                    <CreateAvailabilityExceptionForm businessId={business.id} />
+                  </Card>
+                </div>
+              ),
+            },
+            {
+              label: 'General',
+              content: (
+                <div className="flex flex-col gap-6">
+                  <Card>
+                    <EditBusinessForm business={business} />
+                  </Card>
 
-        <Card>
-          <h2 className="text-base font-semibold text-gray-900">Horario semanal</h2>
-          {business.schedules.length === 0 ? (
-            <p className="mt-2 text-sm text-gray-500">Todavía no configuraste el horario.</p>
-          ) : (
-            <ul className="mt-3 divide-y divide-gray-100">
-              {business.schedules.map((s) => (
-                <ScheduleRow key={s.id} schedule={s} />
-              ))}
-            </ul>
-          )}
-          <CreateScheduleForm businessId={business.id} />
-        </Card>
-
-        <Card>
-          <h2 className="text-base font-semibold text-gray-900">Excepciones de disponibilidad</h2>
-          {business.availability.length === 0 ? (
-            <p className="mt-2 text-sm text-gray-500">No hay excepciones configuradas.</p>
-          ) : (
-            <ul className="mt-3 divide-y divide-gray-100">
-              {business.availability.map((a) => (
-                <AvailabilityExceptionRow key={a.id} exception={a} />
-              ))}
-            </ul>
-          )}
-          <CreateAvailabilityExceptionForm businessId={business.id} />
-        </Card>
-
-        <Card className="border-red-200">
-          <h2 className="text-base font-semibold text-red-700">Zona de peligro</h2>
-          <div className="mt-3">
-            <DeleteBusinessForm businessId={business.id} businessName={business.name} />
-          </div>
-        </Card>
+                  <Card className="border-red-200">
+                    <h2 className="text-base font-semibold text-red-700">Zona de peligro</h2>
+                    <div className="mt-3">
+                      <DeleteBusinessForm businessId={business.id} businessName={business.name} />
+                    </div>
+                  </Card>
+                </div>
+              ),
+            },
+          ]}
+        />
       </div>
     </Container>
   );

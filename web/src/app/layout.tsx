@@ -22,13 +22,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Link href="/" className="text-lg font-semibold text-gray-900">
               Turnos
             </Link>
-            <nav className="flex items-center gap-6">
+            <nav className="flex items-center gap-5">
               {user ? (
                 <>
-                  <Link href="/businesses" className={navLinkClass}>Mis negocios</Link>
+                  <Link href="/" className={navLinkClass}>Reservar</Link>
                   <Link href="/bookings" className={navLinkClass}>Mis reservas</Link>
+                  <span className="h-4 w-px bg-gray-200" aria-hidden />
+                  <Link href="/businesses" className={navLinkClass}>Mis negocios</Link>
+                  <span className="h-4 w-px bg-gray-200" aria-hidden />
                   <Link href="/profile" className={navLinkClass}>Mi perfil</Link>
-                  <span className="text-sm text-gray-400">{user.email}</span>
                   <form action={logout}>
                     <button type="submit" className={navLinkClass}>
                       Cerrar sesión

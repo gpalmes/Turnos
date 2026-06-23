@@ -25,7 +25,23 @@ interface Resource {
   type: string;
 }
 
+interface Slot {
+  startTime: string;
+  endTime: string;
+  available: boolean;
+}
+
 const STEP_LABELS = ['Negocio', 'Servicio', 'Recurso', 'Fecha y hora'];
+
+function todayStr() {
+  const d = new Date();
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
+}
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+}
 
 function BackLink({ onClick }: { onClick: () => void }) {
   return (
@@ -43,9 +59,17 @@ export default function BookingFlow() {
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [resources, setResources] = useState<Resource[]>([]);
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
-  const [bookingDate, setBookingDate] = useState('');
+
+  const [bookingDate, setBookingDate] = useState(todayStr());
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [needsLogin, setNeedsLogin] = useState(false);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [confirmed, setConfirmed] = useState<{ id: string } | null>(null);
 
   useEffect(() => {
     const fetchBusinesses = async () => {
@@ -63,6 +87,42 @@ export default function BookingFlow() {
     fetchBusinesses();
   }, []);
 
+  // Cada vez que estamos en el paso 4 con recurso + fecha, traemos los horarios disponibles.
+  useEffect(() => {
+    if (step !== 4 || !selectedBusiness || !selectedResource || !selectedService || !bookingDate) {
+      return;
+    }
+
+    let cancelled = false;
+    setSlotsLoading(true);
+    setSelectedSlot(null);
+    setError('');
+
+    const fetchSlots = async () => {
+      try {
+        const params = new URLSearchParams({
+          businessId: selectedBusiness.id,
+          resourceId: selectedResource.id,
+          date: bookingDate,
+          durationMinutes: String(selectedService.duration),
+        });
+        const res = await fetch(`/api/availability?${params}`);
+        const data = await res.json();
+        if (!cancelled) setSlots(data.slots ?? []);
+      } catch (err) {
+        console.error('Error fetching slots:', err);
+        if (!cancelled) setSlots([]);
+      } finally {
+        if (!cancelled) setSlotsLoading(false);
+      }
+    };
+
+    fetchSlots();
+    return () => {
+      cancelled = true;
+    };
+  }, [step, selectedBusiness, selectedResource, selectedService, bookingDate]);
+
   const handleBusinessSelect = async (business: Business) => {
     setSelectedBusiness(business);
     setStep(2);
@@ -78,7 +138,6 @@ export default function BookingFlow() {
 
   const handleServiceSelect = async (service: Service) => {
     setSelectedService(service);
-    setStep(3);
 
     if (!selectedBusiness) return;
 
@@ -86,10 +145,19 @@ export default function BookingFlow() {
       const resourcesRes = await fetch(
         `/api/resources?businessId=${selectedBusiness.id}&serviceId=${service.id}`
       );
-      const resourcesData = await resourcesRes.json();
+      const resourcesData: Resource[] = await resourcesRes.json();
       setResources(resourcesData);
+
+      // Si hay un solo recurso, no tiene sentido pedir que lo elija: lo saltamos.
+      if (resourcesData.length === 1) {
+        setSelectedResource(resourcesData[0]);
+        setStep(4);
+      } else {
+        setStep(3);
+      }
     } catch (error) {
       console.error('Error fetching resources:', error);
+      setStep(3);
     }
   };
 
@@ -98,11 +166,27 @@ export default function BookingFlow() {
     setStep(4);
   };
 
+  const resetFlow = () => {
+    setStep(1);
+    setSelectedBusiness(null);
+    setSelectedService(null);
+    setSelectedResource(null);
+    setBookingDate(todayStr());
+    setSlots([]);
+    setSelectedSlot(null);
+    setError('');
+    setConfirmed(null);
+    setNeedsLogin(false);
+  };
+
   const handleConfirmBooking = async () => {
-    if (!selectedBusiness || !selectedService || !selectedResource || !bookingDate) {
-      alert('Por favor completa todos los campos');
+    if (!selectedBusiness || !selectedService || !selectedResource || !selectedSlot) {
+      setError('Elegí un horario para continuar');
       return;
     }
+
+    setError('');
+    setSubmitting(true);
 
     try {
       const res = await fetch('/api/bookings', {
@@ -112,7 +196,7 @@ export default function BookingFlow() {
           businessId: selectedBusiness.id,
           serviceId: selectedService.id,
           resourceId: selectedResource.id,
-          startTime: bookingDate,
+          startTime: selectedSlot.startTime,
         }),
       });
 
@@ -123,24 +207,47 @@ export default function BookingFlow() {
 
       if (res.ok) {
         const booking = await res.json();
-        alert(`¡Turno reservado! ID: ${booking.id}`);
-        setStep(1);
-        setSelectedBusiness(null);
-        setSelectedService(null);
-        setSelectedResource(null);
-        setBookingDate('');
+        setConfirmed({ id: booking.id });
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || 'Error al reservar turno');
+        setError(data.error || 'Error al reservar turno');
       }
-    } catch (error) {
-      console.error('Error confirming booking:', error);
-      alert('Error al reservar turno');
+    } catch (err) {
+      console.error('Error confirming booking:', err);
+      setError('Error al reservar turno');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   if (loading) {
     return <p className="text-sm text-gray-500">Cargando negocios...</p>;
+  }
+
+  // Pantalla de confirmación final.
+  if (confirmed) {
+    return (
+      <Card className="space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 text-green-700">✓</span>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">¡Turno reservado!</h2>
+            <p className="text-sm text-gray-500">Te esperamos en {selectedBusiness?.name}.</p>
+          </div>
+        </div>
+        <div className="space-y-1 text-sm text-gray-700">
+          <p><span className="font-medium text-gray-900">Servicio:</span> {selectedService?.name}</p>
+          <p><span className="font-medium text-gray-900">Recurso:</span> {selectedResource?.name}</p>
+          <p><span className="font-medium text-gray-900">Cuándo:</span> {selectedSlot && new Date(selectedSlot.startTime).toLocaleString('es-AR')}</p>
+        </div>
+        <div className="flex gap-3">
+          <Link href="/bookings">
+            <Button>Ver mis reservas</Button>
+          </Link>
+          <Button variant="secondary" onClick={resetFlow}>Reservar otro turno</Button>
+        </div>
+      </Card>
+    );
   }
 
   return (
@@ -214,20 +321,65 @@ export default function BookingFlow() {
 
       {step === 4 && selectedService && (
         <div>
-          <BackLink onClick={() => setStep(3)} />
+          {/* Si el recurso fue auto-seleccionado (uno solo), "Atrás" vuelve a Servicios. */}
+          <BackLink onClick={() => setStep(resources.length === 1 ? 2 : 3)} />
           <h2 className="mb-4 text-lg font-semibold text-gray-900">Selecciona fecha y hora</h2>
+
+          <label className="mb-2 block text-sm font-medium text-gray-700">Fecha</label>
           <input
-            type="datetime-local"
+            type="date"
             value={bookingDate}
+            min={todayStr()}
             onChange={(e) => setBookingDate(e.target.value)}
-            className="mb-4 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="mb-6 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:w-auto"
           />
-          <Card className="mb-4 space-y-1 text-sm text-gray-700">
-            <p><span className="font-medium text-gray-900">Negocio:</span> {selectedBusiness?.name}</p>
-            <p><span className="font-medium text-gray-900">Servicio:</span> {selectedService.name} ({selectedService.duration} min)</p>
-            <p><span className="font-medium text-gray-900">Recurso:</span> {selectedResource?.name}</p>
-            <p><span className="font-medium text-gray-900">Precio:</span> ${selectedService.price}</p>
-          </Card>
+
+          <p className="mb-2 text-sm font-medium text-gray-700">Horarios disponibles</p>
+          {slotsLoading ? (
+            <p className="text-sm text-gray-500">Buscando horarios...</p>
+          ) : slots.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              No hay horarios para esta fecha. Probá con otro día.
+            </p>
+          ) : (
+            <div className="mb-6 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+              {slots.map((slot) => {
+                const isSelected = selectedSlot?.startTime === slot.startTime;
+                return (
+                  <button
+                    key={slot.startTime}
+                    type="button"
+                    disabled={!slot.available}
+                    onClick={() => setSelectedSlot(slot)}
+                    className={`rounded-lg border px-2 py-2 text-sm font-medium transition-colors ${
+                      isSelected
+                        ? 'border-brand-600 bg-brand-600 text-white'
+                        : slot.available
+                        ? 'border-gray-300 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
+                        : 'cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300 line-through'
+                    }`}
+                  >
+                    {formatTime(slot.startTime)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedSlot && (
+            <Card className="mb-4 space-y-1 text-sm text-gray-700">
+              <p><span className="font-medium text-gray-900">Negocio:</span> {selectedBusiness?.name}</p>
+              <p><span className="font-medium text-gray-900">Servicio:</span> {selectedService.name} ({selectedService.duration} min)</p>
+              <p><span className="font-medium text-gray-900">Recurso:</span> {selectedResource?.name}</p>
+              <p><span className="font-medium text-gray-900">Cuándo:</span> {new Date(selectedSlot.startTime).toLocaleString('es-AR')}</p>
+              <p><span className="font-medium text-gray-900">Precio:</span> ${selectedService.price}</p>
+            </Card>
+          )}
+
+          {error && (
+            <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          )}
+
           {needsLogin ? (
             <p className="text-sm text-gray-600">
               Necesitás iniciar sesión para reservar.{' '}
@@ -236,7 +388,7 @@ export default function BookingFlow() {
               </Link>
             </p>
           ) : (
-            <Button onClick={handleConfirmBooking} disabled={!bookingDate}>
+            <Button onClick={handleConfirmBooking} loading={submitting} disabled={!selectedSlot}>
               Confirmar reserva
             </Button>
           )}

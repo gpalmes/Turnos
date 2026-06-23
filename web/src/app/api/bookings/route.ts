@@ -12,12 +12,32 @@ export async function GET(req: NextRequest) {
 
     const businessId = req.nextUrl.searchParams.get('businessId');
 
-    // Solo las reservas propias: el userId siempre viene de la sesión, nunca del query param.
-    const where: any = { userId: user.id };
-    if (businessId) where.businessId = businessId;
+    const where: any = {};
+
+    if (businessId) {
+      // Vista del dueño: si pide las reservas de un negocio, tiene que ser el dueño
+      // (o admin). En ese caso ve TODAS las reservas del negocio, no sólo las propias.
+      const business = await prisma.business.findUnique({
+        where: { id: businessId },
+        select: { ownerId: true },
+      });
+
+      const isOwner = business?.ownerId === user.id;
+      const isAdmin = user.role === 'admin';
+
+      if (!business || (!isOwner && !isAdmin)) {
+        // No es dueño: sólo puede ver sus propias reservas dentro de ese negocio.
+        where.userId = user.id;
+      }
+      where.businessId = businessId;
+    } else {
+      // Sin businessId: vista del cliente, sólo sus reservas.
+      where.userId = user.id;
+    }
 
     const bookings = await prisma.booking.findMany({
       where,
+      orderBy: { startTime: 'desc' },
       include: {
         user: { select: { id: true, email: true, name: true } },
         business: { select: { id: true, name: true } },

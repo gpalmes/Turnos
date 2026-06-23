@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-// GET /api/availability?businessId=xxx&resourceId=yyy&date=2024-06-18
+// GET /api/availability?businessId=xxx&resourceId=yyy&date=2024-06-18&durationMinutes=60
 export async function GET(req: NextRequest) {
   try {
     const businessId = req.nextUrl.searchParams.get('businessId');
     const resourceId = req.nextUrl.searchParams.get('resourceId');
     const dateStr = req.nextUrl.searchParams.get('date');
+    const durationParam = req.nextUrl.searchParams.get('durationMinutes');
 
     if (!businessId || !resourceId || !dateStr) {
       return NextResponse.json(
@@ -14,6 +15,23 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Duración del turno: cuánto tiene que estar libre desde el inicio del slot.
+    // Si no se pasa, cae a 15 min (comportamiento histórico de slot suelto).
+    const durationMinutes = durationParam ? parseInt(durationParam, 10) : 15;
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+      return NextResponse.json({ error: 'durationMinutes inválido' }, { status: 400 });
+    }
+
+    // El negocio define la anticipación mínima (mismo criterio que POST /api/bookings).
+    const business = await prisma.business.findUnique({
+      where: { id: businessId },
+      select: { minAdvanceHours: true },
+    });
+    if (!business) {
+      return NextResponse.json({ error: 'Business not found' }, { status: 404 });
+    }
+    const earliestBookable = Date.now() + business.minAdvanceHours * 60 * 60 * 1000;
 
     const [year, month, day] = dateStr.split('-').map(Number);
     const date = new Date(year, month - 1, day);
@@ -69,39 +87,53 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Generate available slots (15-minute intervals) for each open block
+    // Generamos posibles horas de inicio cada 15 min. Un slot sólo se ofrece si el
+    // turno completo (inicio + duración) entra en el bloque y no pisa nada.
+    const STEP_MS = 15 * 60000;
+    const durationMs = durationMinutes * 60000;
     const slots: any[] = [];
 
     for (const block of openBlocks) {
       const [startHour, startMin] = block.startTime.split(':').map(Number);
       const [endHour, endMin] = block.endTime.split(':').map(Number);
 
-      let current = new Date(date);
-      current.setHours(startHour, startMin, 0, 0);
+      const blockStart = new Date(date);
+      blockStart.setHours(startHour, startMin, 0, 0);
 
       const blockEnd = new Date(date);
       blockEnd.setHours(endHour, endMin, 0, 0);
 
-      while (current < blockEnd) {
-        const slotEnd = new Date(current.getTime() + 15 * 60000);
-        const slotMinutes = current.getHours() * 60 + current.getMinutes();
-        const isBlocked = blockedRanges.some((r) => slotMinutes >= r.start && slotMinutes < r.end);
+      let current = new Date(blockStart);
 
-        if (!isBlocked) {
-          const isBooked = bookings.some(
-            (b) => b.startTime <= current && current < b.endTime
-          );
+      while (current.getTime() + durationMs <= blockEnd.getTime()) {
+        const slotEnd = new Date(current.getTime() + durationMs);
+        const startMinutes = current.getHours() * 60 + current.getMinutes();
+        const endMinutes = startMinutes + durationMinutes;
 
+        // ¿El turno completo cae sobre algún rango bloqueado (excepción no disponible)?
+        const hitsBlocked = blockedRanges.some(
+          (r) => startMinutes < r.end && endMinutes > r.start
+        );
+        // ¿Se solapa con una reserva existente del mismo recurso?
+        const isBooked = bookings.some(
+          (b) => b.startTime < slotEnd && current < b.endTime
+        );
+        // ¿Respeta la anticipación mínima del negocio (y no es en el pasado)?
+        const tooSoon = current.getTime() < earliestBookable;
+
+        if (!hitsBlocked) {
           slots.push({
             startTime: current.toISOString(),
             endTime: slotEnd.toISOString(),
-            available: !isBooked,
+            available: !isBooked && !tooSoon,
           });
         }
 
-        current = slotEnd;
+        current = new Date(current.getTime() + STEP_MS);
       }
     }
+
+    slots.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
     return NextResponse.json({ slots }, { status: 200 });
   } catch (error: any) {
