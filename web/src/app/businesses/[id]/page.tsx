@@ -6,12 +6,14 @@ import EditBusinessForm from '@/components/business/EditBusinessForm';
 import CreateServiceForm from '@/components/business/CreateServiceForm';
 import CreateResourceForm from '@/components/business/CreateResourceForm';
 import CreateScheduleForm from '@/components/business/CreateScheduleForm';
-import AssociateResourcesForm from '@/components/business/AssociateResourcesForm';
 import CreateAvailabilityExceptionForm from '@/components/business/CreateAvailabilityExceptionForm';
+import ServiceRow from '@/components/business/ServiceRow';
+import ResourceRow from '@/components/business/ResourceRow';
+import ScheduleRow from '@/components/business/ScheduleRow';
+import AvailabilityExceptionRow from '@/components/business/AvailabilityExceptionRow';
+import DeleteBusinessForm from '@/components/business/DeleteBusinessForm';
 import Container from '@/components/ui/Container';
 import Card from '@/components/ui/Card';
-
-const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 export default async function BusinessDetailPage({ params }: { params: { id: string } }) {
   const user = await getSessionUser();
@@ -59,16 +61,11 @@ export default async function BusinessDetailPage({ params }: { params: { id: str
           ) : (
             <ul className="mt-3 divide-y divide-gray-100">
               {business.services.map((s) => (
-                <li key={s.id} className="py-3">
-                  <p className="text-sm text-gray-900">
-                    <span className="font-medium">{s.name}</span> — {s.duration} min — ${s.price}
-                  </p>
-                  <AssociateResourcesForm
-                    serviceId={s.id}
-                    allResources={business.resources.map((r) => ({ id: r.id, name: r.name }))}
-                    selectedResourceIds={s.resources.map((r) => r.id)}
-                  />
-                </li>
+                <ServiceRow
+                  key={s.id}
+                  service={s}
+                  allResources={business.resources.map((r) => ({ id: r.id, name: r.name }))}
+                />
               ))}
             </ul>
           )}
@@ -82,9 +79,7 @@ export default async function BusinessDetailPage({ params }: { params: { id: str
           ) : (
             <ul className="mt-3 divide-y divide-gray-100">
               {business.resources.map((r) => (
-                <li key={r.id} className="py-2 text-sm text-gray-900">
-                  {r.name} <span className="text-gray-500">({r.type})</span>
-                </li>
+                <ResourceRow key={r.id} resource={r} />
               ))}
             </ul>
           )}
@@ -98,9 +93,7 @@ export default async function BusinessDetailPage({ params }: { params: { id: str
           ) : (
             <ul className="mt-3 divide-y divide-gray-100">
               {business.schedules.map((s) => (
-                <li key={s.id} className="py-2 text-sm text-gray-900">
-                  {DIAS[s.dayOfWeek]}: {s.startTime} - {s.endTime}
-                </li>
+                <ScheduleRow key={s.id} schedule={s} />
               ))}
             </ul>
           )}
@@ -114,14 +107,18 @@ export default async function BusinessDetailPage({ params }: { params: { id: str
           ) : (
             <ul className="mt-3 divide-y divide-gray-100">
               {business.availability.map((a) => (
-                <li key={a.id} className="py-2 text-sm text-gray-900">
-                  {a.date.toLocaleDateString('es-AR')} {a.startTime}-{a.endTime}: {a.isAvailable ? 'Abierto extra' : 'Cerrado'}
-                  {a.reason ? <span className="text-gray-500"> ({a.reason})</span> : ''}
-                </li>
+                <AvailabilityExceptionRow key={a.id} exception={a} />
               ))}
             </ul>
           )}
           <CreateAvailabilityExceptionForm businessId={business.id} />
+        </Card>
+
+        <Card className="border-red-200">
+          <h2 className="text-base font-semibold text-red-700">Zona de peligro</h2>
+          <div className="mt-3">
+            <DeleteBusinessForm businessId={business.id} businessName={business.name} />
+          </div>
         </Card>
       </div>
     </Container>

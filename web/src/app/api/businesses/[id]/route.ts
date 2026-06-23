@@ -57,3 +57,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// DELETE /api/businesses/[id] - borra en cascada servicios, recursos, horarios, excepciones y reservas
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getSessionUser();
+    if (!user) {
+      return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+    }
+
+    const business = await prisma.business.findUnique({ where: { id: params.id } });
+    if (!business || (business.ownerId !== user.id && user.role !== 'admin')) {
+      return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+    }
+
+    await prisma.business.delete({ where: { id: params.id } });
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
