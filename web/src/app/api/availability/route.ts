@@ -23,6 +23,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'durationMinutes inválido' }, { status: 400 });
     }
 
+    // Cada cuánto se ofrece un horario de inicio. Por defecto 15 min.
+    const stepParam = req.nextUrl.searchParams.get('stepMinutes');
+    const stepMinutes = stepParam ? parseInt(stepParam, 10) : 15;
+    if (!Number.isFinite(stepMinutes) || stepMinutes <= 0) {
+      return NextResponse.json({ error: 'stepMinutes inválido' }, { status: 400 });
+    }
+
     // El negocio define la anticipación mínima (mismo criterio que POST /api/bookings).
     const business = await prisma.business.findUnique({
       where: { id: businessId },
@@ -89,7 +96,7 @@ export async function GET(req: NextRequest) {
 
     // Generamos posibles horas de inicio cada 15 min. Un slot sólo se ofrece si el
     // turno completo (inicio + duración) entra en el bloque y no pisa nada.
-    const STEP_MS = 15 * 60000;
+    const STEP_MS = stepMinutes * 60000;
     const durationMs = durationMinutes * 60000;
     const slots: any[] = [];
 
@@ -121,13 +128,29 @@ export async function GET(req: NextRequest) {
         // ¿Respeta la anticipación mínima del negocio (y no es en el pasado)?
         const tooSoon = current.getTime() < earliestBookable;
 
-        if (!hitsBlocked) {
-          slots.push({
-            startTime: current.toISOString(),
-            endTime: slotEnd.toISOString(),
-            available: !isBooked && !tooSoon,
-          });
+        // Estado del slot:
+        //  - 'unavailable' (No disponible): pasado / bloqueado (excepción no disponible).
+        //  - 'booked' (Ocupado): ya hay una reserva.
+        //  - 'free' (Libre): se puede reservar.
+        let status: 'free' | 'booked' | 'unavailable';
+        if (hitsBlocked || tooSoon) {
+          status = 'unavailable';
+        } else if (isBooked) {
+          status = 'booked';
+        } else {
+          status = 'free';
         }
+
+        // Hora de pared del inicio (HH:MM), para que el calendario alinee sin
+        // depender de la zona horaria del cliente.
+        const startLabel = `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`;
+        slots.push({
+          startTime: current.toISOString(),
+          endTime: slotEnd.toISOString(),
+          start: startLabel,
+          status,
+          available: status === 'free',
+        });
 
         current = new Date(current.getTime() + STEP_MS);
       }
@@ -135,7 +158,11 @@ export async function GET(req: NextRequest) {
 
     slots.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-    return NextResponse.json({ slots }, { status: 200 });
+    // Devolvemos también los bloques de horario abiertos del día para que el
+    // calendario arme su eje de horas alineado al horario cargado del negocio.
+    const blocks = openBlocks.map((b) => ({ startTime: b.startTime, endTime: b.endTime }));
+
+    return NextResponse.json({ slots, openBlocks: blocks }, { status: 200 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

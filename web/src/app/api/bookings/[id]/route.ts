@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
 
-// PATCH /api/bookings/[id] - Cancelar reserva
+// PATCH /api/bookings/[id] - Confirmar o cancelar reserva
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const user = await getSessionUser();
@@ -25,6 +25,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const body = await req.json();
     const { action, force } = body;
+
+    // Confirmar: solo el dueño del negocio (o admin), sobre reservas pendientes.
+    if (action === 'confirm') {
+      if (!isBusinessOwner && !isAdmin) {
+        return NextResponse.json({ error: 'No tenés permisos para confirmar' }, { status: 403 });
+      }
+      if (booking.status !== 'pending') {
+        return NextResponse.json(
+          { error: 'Solo se pueden confirmar reservas pendientes' },
+          { status: 400 }
+        );
+      }
+
+      const confirmed = await prisma.booking.update({
+        where: { id: params.id },
+        data: { status: 'confirmed' },
+      });
+      return NextResponse.json(confirmed, { status: 200 });
+    }
 
     if (action !== 'cancel') {
       return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });

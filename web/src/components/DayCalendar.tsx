@@ -10,6 +10,8 @@ interface Resource {
 interface Slot {
   startTime: string;
   endTime: string;
+  start: string; // hora de pared "HH:MM"
+  status: 'free' | 'booked' | 'unavailable';
   available: boolean;
 }
 
@@ -19,8 +21,17 @@ function todayStr() {
   return new Date(d.getTime() - tz).toISOString().slice(0, 10);
 }
 
-function hhmm(iso: string) {
-  return new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+const STEP_MINUTES = 30;
+
+function toMinutes(t: string) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function toHHMM(min: number) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 function shiftDate(dateStr: string, deltaDays: number) {
@@ -39,6 +50,7 @@ export default function DayCalendar({
 }) {
   const [date, setDate] = useState(todayStr());
   const [slotsByResource, setSlotsByResource] = useState<Slot[][]>([]);
+  const [openBlocks, setOpenBlocks] = useState<{ startTime: string; endTime: string }[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -55,17 +67,28 @@ export default function DayCalendar({
               businessId,
               resourceId: r.id,
               date,
-              durationMinutes: '60',
+              durationMinutes: '30',
+              stepMinutes: '30',
             });
             const res = await fetch(`/api/availability?${params}`);
             const data = await res.json();
-            return (data.slots ?? []) as Slot[];
+            return {
+              slots: (data.slots ?? []) as Slot[],
+              openBlocks: (data.openBlocks ?? []) as { startTime: string; endTime: string }[],
+            };
           })
         );
-        if (!cancelled) setSlotsByResource(results);
+        if (!cancelled) {
+          setSlotsByResource(results.map((r) => r.slots));
+          // Los bloques son a nivel negocio (iguales para todos los recursos).
+          setOpenBlocks(results.find((r) => r.openBlocks.length)?.openBlocks ?? []);
+        }
       } catch (err) {
         console.error('Error fetching day:', err);
-        if (!cancelled) setSlotsByResource([]);
+        if (!cancelled) {
+          setSlotsByResource([]);
+          setOpenBlocks([]);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -77,19 +100,25 @@ export default function DayCalendar({
     };
   }, [businessId, date, resources]);
 
-  // Todas las horas de inicio del día (de cualquier recurso) → filas de la grilla.
+  // Eje de horas continuo, derivado del horario cargado del negocio (no de los
+  // slots existentes): así la grilla queda alineada con los bloques abiertos.
   const rowTimes = useMemo(() => {
     const set = new Set<string>();
-    slotsByResource.forEach((slots) => slots.forEach((s) => set.add(hhmm(s.startTime))));
+    openBlocks.forEach((b) => {
+      const end = toMinutes(b.endTime);
+      for (let t = toMinutes(b.startTime); t + STEP_MINUTES <= end; t += STEP_MINUTES) {
+        set.add(toHHMM(t));
+      }
+    });
     return Array.from(set).sort();
-  }, [slotsByResource]);
+  }, [openBlocks]);
 
   // Acceso rápido: recurso (índice) + hora → slot.
   const lookup = useMemo(() => {
     const map: Record<string, Slot> = {};
     slotsByResource.forEach((slots, ri) => {
       slots.forEach((s) => {
-        map[`${ri}|${hhmm(s.startTime)}`] = s;
+        map[`${ri}|${s.start}`] = s;
       });
     });
     return map;
@@ -130,6 +159,9 @@ export default function DayCalendar({
           <span className="h-3 w-3 rounded bg-red-100 ring-1 ring-red-300" /> Ocupado
         </span>
         <span className="flex items-center gap-1">
+          <span className="h-3 w-3 rounded bg-gray-200 ring-1 ring-gray-300" /> No disponible
+        </span>
+        <span className="flex items-center gap-1">
           <span className="h-3 w-3 rounded bg-gray-50 ring-1 ring-gray-200" /> Cerrado
         </span>
       </div>
@@ -143,9 +175,9 @@ export default function DayCalendar({
           <table className="w-full min-w-[480px] table-fixed border-collapse text-center text-xs">
             <thead>
               <tr>
-                <th className="w-12 p-1 text-gray-400" />
+                <th className="w-14 p-2 text-gray-400" />
                 {resources.map((r) => (
-                  <th key={r.id} className="truncate p-1 font-medium text-gray-700">
+                  <th key={r.id} className="truncate border-l border-white bg-gray-100 p-2 font-medium text-gray-700">
                     {r.name}
                   </th>
                 ))}
@@ -153,24 +185,30 @@ export default function DayCalendar({
             </thead>
             <tbody>
               {rowTimes.map((time) => (
-                <tr key={time}>
-                  <td className="py-0.5 pr-2 text-right align-middle text-[11px] text-gray-500">{time}</td>
+                <tr key={time} className="h-10">
+                  <td className="pr-2 text-right align-middle text-[11px] font-medium text-gray-500">{time}</td>
                   {resources.map((r, ri) => {
                     const slot = lookup[`${ri}|${time}`];
-                    let cls = 'bg-gray-50 text-gray-300'; // cerrado
+                    let cls = 'bg-gray-50 text-gray-300'; // cerrado (fuera de horario)
                     let label = '·';
                     if (slot) {
-                      if (slot.available) {
-                        cls = 'bg-green-100 text-green-700';
+                      if (slot.status === 'free') {
+                        cls = 'bg-green-100 text-green-700 hover:bg-green-200';
                         label = 'Libre';
-                      } else {
+                      } else if (slot.status === 'booked') {
                         cls = 'bg-red-100 text-red-700';
                         label = 'Ocupado';
+                      } else {
+                        cls = 'bg-gray-200 text-gray-500';
+                        label = 'No disp.';
                       }
                     }
                     return (
-                      <td key={r.id} className="px-0.5 py-0.5">
-                        <div className={`rounded py-0.5 ${cls}`}>{label}</div>
+                      <td
+                        key={r.id}
+                        className={`border border-white align-middle font-medium transition-colors ${cls}`}
+                      >
+                        {label}
                       </td>
                     );
                   })}

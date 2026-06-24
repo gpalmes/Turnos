@@ -22,30 +22,28 @@ export default function BusinessBooking({
   business: Business;
   resources: Resource[];
 }) {
-  const [mode, setMode] = useState<'explore' | 'book'>('explore');
+  const [booking, setBooking] = useState(false);
+
+  if (booking) {
+    return (
+      <div>
+        <button
+          onClick={() => setBooking(false)}
+          className="mb-4 text-sm text-gray-500 hover:text-brand-600"
+        >
+          ← Volver a disponibilidad
+        </button>
+        <BookingFlow business={business} />
+      </div>
+    );
+  }
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap gap-3">
-        <Button
-          variant={mode === 'explore' ? 'primary' : 'secondary'}
-          onClick={() => setMode('explore')}
-        >
-          Buscar disponibilidad
-        </Button>
-        <Button
-          variant={mode === 'book' ? 'primary' : 'secondary'}
-          onClick={() => setMode('book')}
-        >
-          Nueva reserva
-        </Button>
+      <div className="mb-6">
+        <Button onClick={() => setBooking(true)}>Nueva reserva</Button>
       </div>
-
-      {mode === 'explore' ? (
-        <DayCalendar businessId={business.id} resources={resources} />
-      ) : (
-        <BookingFlow business={business} />
-      )}
+      <DayCalendar businessId={business.id} resources={resources} />
     </div>
   );
 }
