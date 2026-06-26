@@ -38,7 +38,8 @@ export async function GET(req: NextRequest) {
     if (!business) {
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
     }
-    const earliestBookable = Date.now() + business.minAdvanceHours * 60 * 60 * 1000;
+    // Sin anticipación mínima: solo se considera "no disponible" lo que ya pasó.
+    const earliestBookable = Date.now();
 
     const [year, month, day] = dateStr.split('-').map(Number);
     const date = new Date(year, month - 1, day);

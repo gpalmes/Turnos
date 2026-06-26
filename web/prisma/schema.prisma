@@ -115,6 +115,11 @@ model Booking {
   endTime     DateTime
   status      String     @default("pending") // pending, confirmed, completed, cancelled
   notes       String?
+  // Pago
+  paymentStatus String   @default("pending") // pending, partial, paid
+  paymentAmount Float?
+  paymentMethod String?  // efectivo, transferencia, tarjeta
+  receiptPath   String?  // ruta del comprobante en el bucket de Supabase Storage
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 }

@@ -13,6 +13,7 @@ import ScheduleRow from '@/components/business/ScheduleRow';
 import AvailabilityExceptionRow from '@/components/business/AvailabilityExceptionRow';
 import DeleteBusinessForm from '@/components/business/DeleteBusinessForm';
 import OwnerBookingRow from '@/components/business/OwnerBookingRow';
+import DayCalendar from '@/components/DayCalendar';
 import Container from '@/components/ui/Container';
 import Card from '@/components/ui/Card';
 import Tabs from '@/components/ui/Tabs';
@@ -68,6 +69,14 @@ export default async function BusinessDetailPage({ params }: { params: { id: str
             {
               label: `Reservas${bookings.length ? ` (${bookings.length})` : ''}`,
               content: (
+                <div className="flex flex-col gap-6">
+                <Card>
+                  <h2 className="mb-4 text-base font-semibold text-gray-900">Agenda</h2>
+                  <DayCalendar
+                    businessId={business.id}
+                    resources={business.resources.map((r) => ({ id: r.id, name: r.name }))}
+                  />
+                </Card>
                 <Card>
                   <h2 className="text-base font-semibold text-gray-900">Reservas recibidas</h2>
                   {bookings.length === 0 ? (
@@ -91,6 +100,7 @@ export default async function BusinessDetailPage({ params }: { params: { id: str
                     </ul>
                   )}
                 </Card>
+                </div>
               ),
             },
             {

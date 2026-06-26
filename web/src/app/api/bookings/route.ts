@@ -97,16 +97,10 @@ export async function POST(req: NextRequest) {
     const startDateTime = new Date(startTime);
     const endDateTime = new Date(startDateTime.getTime() + service.duration * 60000);
 
-    // Anticipacion minima (tambien cubre "no reservar en el pasado" cuando es 0).
-    const minAdvanceMs = business.minAdvanceHours * 60 * 60 * 1000;
-    if (startDateTime.getTime() < Date.now() + minAdvanceMs) {
+    // Se permite reservar en cualquier horario futuro, sin anticipación mínima.
+    if (startDateTime.getTime() < Date.now()) {
       return NextResponse.json(
-        {
-          error:
-            business.minAdvanceHours > 0
-              ? `Hay que reservar con al menos ${business.minAdvanceHours} hora(s) de anticipación`
-              : 'No se puede reservar en el pasado',
-        },
+        { error: 'No se puede reservar en el pasado' },
         { status: 400 }
       );
     }

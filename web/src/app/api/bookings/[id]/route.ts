@@ -1,6 +1,81 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
+import { createAdminClient, RECEIPTS_BUCKET } from '@/utils/supabase/admin';
+
+// GET /api/bookings/[id] - Detalle de la reserva según el rol del que mira.
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getSessionUser();
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: params.id },
+      include: {
+        business: { select: { ownerId: true, name: true } },
+        service: { select: { name: true, duration: true, price: true } },
+        resource: { select: { name: true } },
+        user: { select: { name: true, email: true } },
+      },
+    });
+
+    if (!booking) {
+      return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+    }
+
+    const isOwner = !!user && booking.business.ownerId === user.id;
+    const isAdmin = user?.role === 'admin';
+    const isOwnBooking = !!user && booking.userId === user.id;
+    const canManage = isOwner || isAdmin;
+
+    // Base visible para todos (ocupación, sin datos sensibles).
+    const base = {
+      id: booking.id,
+      startTime: booking.startTime.toISOString(),
+      endTime: booking.endTime.toISOString(),
+      status: booking.status,
+      serviceName: booking.service.name,
+      resourceName: booking.resource.name,
+      businessName: booking.business.name,
+      canManage,
+      canCancel: canManage || isOwnBooking,
+    };
+
+    if (!canManage && !isOwnBooking) {
+      return NextResponse.json(base, { status: 200 });
+    }
+
+    // Comprobante: link firmado temporal (solo si lo puede ver).
+    let receiptUrl: string | null = null;
+    if (booking.receiptPath) {
+      try {
+        const admin = createAdminClient();
+        const { data } = await admin.storage
+          .from(RECEIPTS_BUCKET)
+          .createSignedUrl(booking.receiptPath, 60 * 60);
+        receiptUrl = data?.signedUrl ?? null;
+      } catch {
+        receiptUrl = null;
+      }
+    }
+
+    return NextResponse.json(
+      {
+        ...base,
+        price: booking.service.price,
+        client: canManage ? { name: booking.user.name, email: booking.user.email } : undefined,
+        payment: {
+          status: booking.paymentStatus,
+          amount: booking.paymentAmount,
+          method: booking.paymentMethod,
+          receiptUrl,
+        },
+      },
+      { status: 200 }
+    );
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
 
 // PATCH /api/bookings/[id] - Confirmar o cancelar reserva
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
