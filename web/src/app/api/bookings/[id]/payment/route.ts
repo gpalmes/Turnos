@@ -4,7 +4,8 @@ import { getSessionUser } from '@/lib/auth';
 import { createAdminClient, ensureReceiptsBucket, RECEIPTS_BUCKET } from '@/utils/supabase/admin';
 
 const VALID_STATUS = ['pending', 'partial', 'paid'];
-const VALID_METHODS = ['efectivo', 'transferencia', 'tarjeta'];
+// 'mercadopago' queda preparado; la integración de cobro online se hará luego.
+const VALID_METHODS = ['efectivo', 'transferencia', 'mercadopago', 'tarjeta'];
 
 // POST /api/bookings/[id]/payment - Registrar pago y (opcional) adjuntar comprobante.
 // Solo el dueño del negocio o un admin. Recibe multipart/form-data.

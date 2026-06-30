@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
+import { notify } from '@/lib/notify';
 
 // GET /api/bookings
 export async function GET(req: NextRequest) {
@@ -134,6 +135,13 @@ export async function POST(req: NextRequest) {
         status: 'pending',
       },
     });
+
+    // Avisar al dueño del negocio que recibió una reserva nueva.
+    await notify(
+      business.ownerId,
+      `Nueva reserva en "${business.name}" para el ${startDateTime.toLocaleString('es-AR')}.`,
+      `/businesses/${business.id}`
+    );
 
     return NextResponse.json(booking, { status: 201 });
   } catch (error: any) {

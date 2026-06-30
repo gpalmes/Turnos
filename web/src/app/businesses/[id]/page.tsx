@@ -13,6 +13,7 @@ import ScheduleRow from '@/components/business/ScheduleRow';
 import AvailabilityExceptionRow from '@/components/business/AvailabilityExceptionRow';
 import DeleteBusinessForm from '@/components/business/DeleteBusinessForm';
 import OwnerBookingRow from '@/components/business/OwnerBookingRow';
+import BusinessImageForm from '@/components/business/BusinessImageForm';
 import DayCalendar from '@/components/DayCalendar';
 import Container from '@/components/ui/Container';
 import Card from '@/components/ui/Card';
@@ -179,6 +180,10 @@ export default async function BusinessDetailPage({ params }: { params: { id: str
               label: 'General',
               content: (
                 <div className="flex flex-col gap-6">
+                  <Card>
+                    <BusinessImageForm businessId={business.id} currentImageUrl={business.imageUrl} />
+                  </Card>
+
                   <Card>
                     <EditBusinessForm business={business} />
                   </Card>

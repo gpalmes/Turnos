@@ -30,6 +30,12 @@ const PAYMENT_LABELS: Record<string, string> = {
   paid: 'Pagado',
 };
 
+function toLocalInput(iso: string) {
+  const d = new Date(iso);
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tz).toISOString().slice(0, 16);
+}
+
 export default function BookingDetailModal({
   bookingId,
   onClose,
@@ -50,6 +56,9 @@ export default function BookingDetailModal({
   const [payMethod, setPayMethod] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
+  // Reprogramar
+  const [rescheduleAt, setRescheduleAt] = useState('');
+
   const load = async () => {
     setLoading(true);
     try {
@@ -60,6 +69,7 @@ export default function BookingDetailModal({
         return;
       }
       setDetail(data);
+      if (data.startTime) setRescheduleAt(toLocalInput(data.startTime));
       if (data.payment) {
         setPayStatus(data.payment.status || 'pending');
         setPayAmount(data.payment.amount != null ? String(data.payment.amount) : '');
@@ -222,6 +232,29 @@ export default function BookingDetailModal({
               )}
             </div>
 
+            {/* Reprogramar (quien pueda gestionar la reserva) */}
+            {detail.canCancel && detail.status !== 'cancelled' && (
+              <div className="space-y-2 border-t border-gray-100 pt-4">
+                <h3 className="text-sm font-semibold text-gray-900">Reprogramar</h3>
+                <div className="flex flex-wrap items-end gap-2">
+                  <input
+                    type="datetime-local"
+                    value={rescheduleAt}
+                    onChange={(e) => setRescheduleAt(e.target.value)}
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                  <Button
+                    variant="secondary"
+                    loading={submitting}
+                    onClick={() => action({ action: 'reschedule', startTime: rescheduleAt })}
+                    className="text-xs"
+                  >
+                    Guardar nuevo horario
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Pago (solo dueño/admin) */}
             {detail.canManage && detail.payment && (
               <form onSubmit={handlePayment} className="space-y-3 border-t border-gray-100 pt-4">
@@ -268,6 +301,7 @@ export default function BookingDetailModal({
                     <option value="">—</option>
                     <option value="efectivo">Efectivo</option>
                     <option value="transferencia">Transferencia</option>
+                    <option value="mercadopago">Mercado Pago</option>
                     <option value="tarjeta">Tarjeta</option>
                   </select>
                 </label>

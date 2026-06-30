@@ -21,10 +21,6 @@ export default function CreateBusinessForm() {
     const body = {
       name: formData.get('name'),
       category: formData.get('category'),
-      timezone: formData.get('timezone') || 'UTC',
-      address: formData.get('address') || undefined,
-      phone: formData.get('phone') || undefined,
-      email: formData.get('email') || undefined,
     };
 
     try {
@@ -49,16 +45,16 @@ export default function CreateBusinessForm() {
 
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="flex max-w-md flex-col gap-4">
-      <h3 className="text-base font-semibold text-gray-900">Crear negocio</h3>
+      <h3 className="text-base font-semibold text-gray-900">Dar de alta un negocio</h3>
+      <p className="text-sm text-gray-500">
+        Cargá los datos básicos. La solicitud queda <strong>pendiente de aprobación</strong> de
+        un administrador; una vez aprobada, vas a poder completar servicios, horarios y publicarla.
+      </p>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       <Input label="Nombre" type="text" name="name" required />
       <RubroField />
-      <Input label="Zona horaria" type="text" name="timezone" defaultValue="UTC" />
-      <Input label="Dirección" type="text" name="address" />
-      <Input label="Teléfono" type="text" name="phone" />
-      <Input label="Email de contacto" type="email" name="email" />
       <Button type="submit" loading={submitting}>
-        {submitting ? 'Creando...' : 'Crear negocio'}
+        {submitting ? 'Enviando...' : 'Solicitar alta'}
       </Button>
     </form>
   );

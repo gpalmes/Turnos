@@ -15,11 +15,21 @@ export function createAdminClient() {
 }
 
 export const RECEIPTS_BUCKET = 'receipts';
+export const BUSINESS_IMAGES_BUCKET = 'business-images';
 
-// Garantiza que exista el bucket privado de comprobantes.
-export async function ensureReceiptsBucket(admin: ReturnType<typeof createAdminClient>) {
+// Garantiza que exista un bucket (privado o público).
+export async function ensureBucket(
+  admin: ReturnType<typeof createAdminClient>,
+  name: string,
+  isPublic: boolean
+) {
   const { data: buckets } = await admin.storage.listBuckets();
-  if (!buckets?.some((b) => b.name === RECEIPTS_BUCKET)) {
-    await admin.storage.createBucket(RECEIPTS_BUCKET, { public: false });
+  if (!buckets?.some((b) => b.name === name)) {
+    await admin.storage.createBucket(name, { public: isPublic });
   }
+}
+
+// Comprobantes: bucket privado.
+export async function ensureReceiptsBucket(admin: ReturnType<typeof createAdminClient>) {
+  await ensureBucket(admin, RECEIPTS_BUCKET, false);
 }

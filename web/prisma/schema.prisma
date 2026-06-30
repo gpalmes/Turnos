@@ -17,14 +17,27 @@ model User {
   updatedAt DateTime   @updatedAt
 
   // Relations
-  businesses  Business[]
-  bookings    Booking[]
+  businesses    Business[]
+  bookings      Booking[]
+  notifications Notification[]
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   String
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 model Business {
   id        String     @id @default(cuid())
   name      String
   category  String     // ejemplo: "padel", "medical", "barbershop"
+  approved  Boolean    @default(false) // requiere aprobación de un admin para publicarse
+  imageUrl  String?    // foto/portada del negocio (Supabase Storage)
   timezone  String     @default("UTC")
   address   String?
   phone     String?

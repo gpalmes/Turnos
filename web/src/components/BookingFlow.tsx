@@ -49,7 +49,13 @@ function BackLink({ onClick }: { onClick: () => void }) {
   );
 }
 
-export default function BookingFlow({ business }: { business: Business }) {
+export default function BookingFlow({
+  business,
+  initialService,
+}: {
+  business: Business;
+  initialService?: Service | null;
+}) {
   const [step, setStep] = useState(1);
   const [services, setServices] = useState<Service[]>([]);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
@@ -140,6 +146,14 @@ export default function BookingFlow({ business }: { business: Business }) {
       setStep(2);
     }
   };
+
+  // Si se entra con un servicio ya elegido (desde la vitrina), saltamos el paso 1.
+  useEffect(() => {
+    if (initialService) {
+      handleServiceSelect(initialService);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleResourceSelect = (resource: Resource) => {
     setSelectedResource(resource);

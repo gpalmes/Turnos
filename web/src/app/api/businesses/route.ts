@@ -8,10 +8,27 @@ export async function GET(req: NextRequest) {
     const category = req.nextUrl.searchParams.get('category');
     const withAvailability = req.nextUrl.searchParams.get('withAvailability') === 'true';
 
+    // Para calcular "abierto ahora" traemos los horarios activos de hoy.
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const toMin = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    // El directorio público solo muestra negocios aprobados por un admin.
+    const where: any = { approved: true };
+    if (category) where.category = category;
+
     const businesses = await prisma.business.findMany({
-      where: category ? { category } : undefined,
+      where,
       include: {
         owner: { select: { id: true, email: true, name: true } },
+        schedules: {
+          where: { dayOfWeek, isActive: true },
+          select: { startTime: true, endTime: true },
+        },
         _count: {
           select: {
             services: true,
@@ -22,10 +39,14 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // "Reservable" = tiene al menos un servicio, un recurso y un horario activo.
-    const result = businesses.map((b) => ({
+    const result = businesses.map(({ schedules, ...b }) => ({
       ...b,
+      // "Reservable" = tiene al menos un servicio, un recurso y un horario activo.
       bookable: b._count.services > 0 && b._count.resources > 0 && b._count.schedules > 0,
+      // "Abierto ahora" = hay un horario de hoy que cubre la hora actual.
+      openNow: schedules.some(
+        (s) => nowMinutes >= toMin(s.startTime) && nowMinutes < toMin(s.endTime)
+      ),
     }));
 
     const filtered = withAvailability ? result.filter((b) => b.bookable) : result;
@@ -54,6 +75,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Se crea PENDIENTE de aprobación: no se publica hasta que un admin lo apruebe.
+    // El rol del usuario cambia a "operator" recién al aprobarse.
     const business = await prisma.business.create({
       data: {
         name,
@@ -63,12 +86,9 @@ export async function POST(req: NextRequest) {
         phone,
         email,
         ownerId: user.id,
+        approved: false,
       },
     });
-
-    if (user.role === 'client') {
-      await prisma.user.update({ where: { id: user.id }, data: { role: 'operator' } });
-    }
 
     return NextResponse.json(business, { status: 201 });
   } catch (error: any) {

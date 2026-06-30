@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
+import { notify } from '@/lib/notify';
 import { createAdminClient, RECEIPTS_BUCKET } from '@/utils/supabase/admin';
 
 // GET /api/bookings/[id] - Detalle de la reserva según el rol del que mira.
@@ -87,7 +88,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const booking = await prisma.booking.findUnique({
       where: { id: params.id },
-      include: { business: true },
+      include: { business: true, service: { select: { duration: true } } },
     });
 
     const isOwnBooking = booking?.userId === user.id;
@@ -117,7 +118,67 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         where: { id: params.id },
         data: { status: 'confirmed' },
       });
+      await notify(
+        booking.userId,
+        `Tu reserva en "${booking.business.name}" del ${booking.startTime.toLocaleString('es-AR')} fue confirmada.`,
+        '/bookings'
+      );
       return NextResponse.json(confirmed, { status: 200 });
+    }
+
+    // Reprogramar: cambiar fecha/hora (mismo servicio y recurso).
+    if (action === 'reschedule') {
+      if (booking.status === 'cancelled') {
+        return NextResponse.json({ error: 'No se puede reprogramar una reserva cancelada' }, { status: 400 });
+      }
+      const { startTime } = body;
+      if (!startTime) {
+        return NextResponse.json({ error: 'Falta la nueva fecha/hora' }, { status: 400 });
+      }
+      const newStart = new Date(startTime);
+      if (isNaN(newStart.getTime())) {
+        return NextResponse.json({ error: 'Fecha/hora inválida' }, { status: 400 });
+      }
+      if (newStart.getTime() < Date.now()) {
+        return NextResponse.json({ error: 'No se puede reprogramar al pasado' }, { status: 400 });
+      }
+      const newEnd = new Date(newStart.getTime() + booking.service.duration * 60000);
+
+      // Solapamiento con otras reservas del mismo recurso (excluyendo esta).
+      const overlap = await prisma.booking.findFirst({
+        where: {
+          resourceId: booking.resourceId,
+          id: { not: booking.id },
+          status: { not: 'cancelled' },
+          startTime: { lt: newEnd },
+          endTime: { gt: newStart },
+        },
+      });
+      if (overlap) {
+        return NextResponse.json({ error: 'El recurso ya tiene una reserva en ese horario' }, { status: 409 });
+      }
+
+      const rescheduled = await prisma.booking.update({
+        where: { id: booking.id },
+        data: { startTime: newStart, endTime: newEnd },
+      });
+
+      // Avisar a la otra parte.
+      if (isBusinessOwner || isAdmin) {
+        await notify(
+          booking.userId,
+          `Tu reserva en "${booking.business.name}" se reprogramó para el ${newStart.toLocaleString('es-AR')}.`,
+          '/bookings'
+        );
+      } else {
+        await notify(
+          booking.business.ownerId,
+          `Un cliente reprogramó una reserva en "${booking.business.name}" para el ${newStart.toLocaleString('es-AR')}.`,
+          `/businesses/${booking.businessId}`
+        );
+      }
+
+      return NextResponse.json(rescheduled, { status: 200 });
     }
 
     if (action !== 'cancel') {
@@ -154,6 +215,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       where: { id: params.id },
       data: { status: 'cancelled' },
     });
+
+    const cuando = booking.startTime.toLocaleString('es-AR');
+    if (isBusinessOwner || isAdmin) {
+      // Canceló el negocio → avisar al cliente.
+      await notify(
+        booking.userId,
+        `Tu reserva en "${booking.business.name}" del ${cuando} fue cancelada por el negocio.`,
+        '/bookings'
+      );
+    } else {
+      // Canceló el cliente → avisar al dueño.
+      await notify(
+        booking.business.ownerId,
+        `Un cliente canceló una reserva en "${booking.business.name}" del ${cuando}.`,
+        `/businesses/${booking.businessId}`
+      );
+    }
 
     return NextResponse.json(updated, { status: 200 });
   } catch (error: any) {

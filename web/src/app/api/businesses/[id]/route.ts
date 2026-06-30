@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
+import { notify } from '@/lib/notify';
 
 // PATCH /api/businesses/[id]
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -50,7 +51,31 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
     }
 
+    // Aprobar/rechazar: solo un administrador.
+    if ('approved' in body) {
+      if (user.role !== 'admin') {
+        return NextResponse.json(
+          { error: 'Solo un administrador puede aprobar negocios' },
+          { status: 403 }
+        );
+      }
+      data.approved = !!body.approved;
+    }
+
     const updated = await prisma.business.update({ where: { id: params.id }, data });
+
+    // Al aprobar, el dueño (si era cliente) pasa a rol "operator" (Negocio).
+    if (data.approved === true) {
+      await prisma.user.updateMany({
+        where: { id: updated.ownerId, role: 'client' },
+        data: { role: 'operator' },
+      });
+      await notify(
+        updated.ownerId,
+        `Tu negocio "${updated.name}" fue aprobado y ya está publicado.`,
+        `/businesses/${updated.id}`
+      );
+    }
 
     return NextResponse.json(updated, { status: 200 });
   } catch (error: any) {
@@ -69,6 +94,14 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     const business = await prisma.business.findUnique({ where: { id: params.id } });
     if (!business || (business.ownerId !== user.id && user.role !== 'admin')) {
       return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+    }
+
+    // Si un admin elimina/rechaza el negocio de otro, avisamos al dueño.
+    if (user.role === 'admin' && business.ownerId !== user.id) {
+      const msg = business.approved
+        ? `Tu negocio "${business.name}" fue dado de baja por un administrador.`
+        : `Tu solicitud de negocio "${business.name}" fue rechazada.`;
+      await notify(business.ownerId, msg);
     }
 
     await prisma.business.delete({ where: { id: params.id } });
